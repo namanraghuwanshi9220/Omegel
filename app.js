@@ -32,12 +32,17 @@ io.on("connection", function (socket){
         socket.join(roomname);
         partner.join(roomname);
 
-        io.to(roomname).emit("joined");
+        io.to(roomname).emit("joined", roomname);
       } else {
         waitingusers.push(socket);
       }
 
     });
+
+    socket.on("message", function (data){
+      socket.broadcast.to(data.room).emit("message", data.message);
+      
+    })
 
     socket.on("diconnect", function (){
         let index = waitingusers.findIndex(waitingUser => waitingUser.id === socket.id);
