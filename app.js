@@ -39,12 +39,28 @@ io.on("connection", function (socket){
 
     });
 
+    socket.on("signalingMessage", function (data){
+      socket.broadcast.to(data.room).emit("signalingMessage", data.message);
+    });
+
     socket.on("message", function (data){
       socket.broadcast.to(data.room).emit("message", data.message);
       
     })
 
-    socket.on("diconnect", function (){
+    socket.on("startVideoCall", function ({ room }){
+      socket.broadcast.to(room).emit("incomingCall");
+    })
+
+    socket.on("acceptCall", function ({room}) {
+      socket.broadcast.to(room).emit("callAccepted");
+    });
+
+    socket.on("rejectCall", function ({room}) {
+      socket.broadcast.to(room).emit("rejectCall");
+    });
+
+    socket.on("diconnect", function (){ 
         let index = waitingusers.findIndex(waitingUser => waitingUser.id === socket.id);
      
         waitingusers.splice(index, 1);

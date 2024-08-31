@@ -199,10 +199,10 @@
 
                 const trimmedMessage = message.trim();
 
-// If the message is empty, do not send or display it
- if (trimmedMessage === "") {
-           return; 
-          }
+            // If the message is empty, do not send or display it
+             if (trimmedMessage === "") {
+                       return; 
+                      }
 
           
                 const messageContainer = document.createElement('div');
@@ -222,6 +222,187 @@
                 document.querySelector("#message-container").scrollTop = document.querySelector("#message-container").scrollHeight;
             }
 
+            // webRTC
+
+            let localStream;
+            let remoteStream;
+            let peerConnection;
+            let inCall = false;
+
+            const rtcSettings = {
+                 iceServers: [{ urls: "stun:stun.l.google.com:19302"}],
+
+            };
+            
+            const initialize = async () => {
+
+                socket.on("signalingMessage", handleSignalingMessage);
+
+
+                try{
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: true
+                    })
+                    document.querySelector("#local-video").srcObject = localStream;
+                    document.querySelector("#local-video").style.display = ".smallFrame";
+
+                    inCall = true;
+                }
+                catch (err) {
+                        console.log("rejected" + err)
+                }
+            }
+
+           const initiateOffer = async () => {
+                 await createPeerConnection();
+                 try 
+                 {
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLcoalDescription(offer);
+                    socket.emit("signalingMessage", {
+                        room,
+                        message: JSON.stringify( {
+                            type: "offer",
+                            offer
+                        })
+                    })
+                 }
+                 catch (err) {
+                    console.log("error in creating offer" + err);
+                 }
+           }
+
+           const createPeerConnection = () => {
+        peerConnection = new RTCPeerConnection(rtcSettings);
+
+      remoteStream =  new MediaStream();
+
+      document.querySelector("#remote-video").srcObject = remoteStream;
+      document.querySelector("#remote-videoo").style.display = "block"
+      document.querySelector("#local-video").classList.add(".smallFrame")
+
+      localStream.getTrack().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+      });
+
+      peerConnection.ontrack = (event)=> {
+        event.streams[0].getTracks( ).forEach(track =>{
+            remoteStream.addTrack(track);
+       })
+    }
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            console.log("sending to ice Candidates");
+
+            socket.emit("signalingMessage", {
+                room,
+                message: JSON.stringify({
+                    type: "candidate",
+                    candidate: event.candidate
+                })
+            })
+        }
+      }
+
+      peerConnection.onconnectionstatechange = ()=>{
+        console.log("connection state change ", peerConnection.connectionState)
+      }
+           }
+
+           const handleSignalingMessage = async (message) =>{
+               const {type, offer, answer, candidate} = JSON.parse(message);
+               if(type === "offer") handelOffer(offer);
+               if(type === "answer") handelAnswer(answer);
+               if(type === "candidate" && peerConnection) {
+                try { await peerConnection.addIceCandidates(candidate);}
+                 catch (err) {
+                    console.log(error); 
+                  }
+               } 
+               if ( type === "hangup") {
+                hangup();
+               }
+            
+           }  
+
+           const handelOffer = async (offer) => {
+               await createPeerConnection();
+               try{
+                   await peerConnection.setRemoteDescription(offer);
+                   const answer = await peerConnection.createAnswer();
+                   await peerConnection.setLcoalDescription(answer);
+                   socket.emit("signalingMessage", {room, message: JSON.stringify({ type: "answer", answer}) });
+                   inCall = true;
+               }
+               catch (error) {
+                console.log("faild to handle offer");
+               }
+           }
+
+           const handelAnswer = async (answer) => {
+            try {
+                await peerConnection.setRemoteDescription(answer);
+            }
+            catch (error) {
+                console.log("failed to handel answer");
+            }
+           }
+
+
+
+           document.querySelector("#video-call-btn")
+           .addEventListener("click", function (){
+            socket.emit("startVideoCall", { room })
+           
+           })
+
+           socket.on("incomingCall", function (){
+            document.querySelector("#incoming-call").classList.remove("hidden");
+         
+           })
+
+           socket.on("callAccepted", function () {
+            initialize();
+            document.querySelector(".videoblock").classList.remove("hidden");
+           })
+
+           document.querySelector("#accept-call")
+              .addEventListener("click", function () {
+                document.querySelector("#incoming-call").classList.add("hidden");
+                initialize();
+                document.querySelector(".videoblock").classList.remove("hidden");
+                socket.emit("acceptCall", { room })
+              })
+
+           document.querySelector("#reject-call")
+             .addEventListener("click", function (){
+                document.querySelector("#incoming-call").classList.add("hidden");
+                socket.emit("rejectCall", { room })
+             })   
+
+             socket.on("callRejected", function(){
+                alert("call rejected by user")
+             })
+
+           document.querySelector("#hangup")
+           .addEventListener("click", function(){
+            hangup();
+           }) 
+           
+           function hangup() {
+            if (peerConnection){
+                peerConnection.close();
+                peerConnection = null;
+                localStream.getTracks().forEach(track => track.stop());
+
+                document.querySelector(".videoblock").classList.add("hidden");
+                socket.emit("signalingMessage", { room, message: JSON.stringify({ type: "hangup"}) });
+                inCall = false;
+            }
+           }
+    
         </script>
 </body>
 
